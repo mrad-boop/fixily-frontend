@@ -1,0 +1,8 @@
+{
+  "short_name": "Fixily",
+  "name": "Fixily.tn",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#E8470A",
+  "background_color": "#F0EDE8"
+}
