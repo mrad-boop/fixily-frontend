@@ -1,4 +1,4 @@
-const BASE = process.env.REACT_APP_API_URL || "http://localhost:3001";
+const BASE = "https://fixily-backend.onrender.com";
 
 function getToken() { return localStorage.getItem("fixily_token"); }
 
