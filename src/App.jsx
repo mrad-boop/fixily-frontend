@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 // ─────────────────────────────────────────────────────────────────
 //  COUCHE API  (inline — pas d'import externe)
 // ─────────────────────────────────────────────────────────────────
-const BASE = "http://localhost:3001"; // ← remplacer par l'URL Render en prod
+const BASE = "https://fixily-backend.onrender.com"; // ← remplacer par l'URL Render en prod
 
 function getToken() { return localStorage.getItem("fixily_token"); }
 
