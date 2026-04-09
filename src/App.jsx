@@ -41,6 +41,11 @@ const api = {
   sendContact:    (d)   => request("POST", "/api/contact", d),
   getActiveAd:    (pos) => request("GET",  `/api/ads/active${pos ? `?position=${pos}` : ""}`),
   trackAdClick:   (id)  => request("POST", `/api/ads/${id}/click`),
+  getStats:       ()    => request("GET",  "/api/stats"),
+  notifyPremium:  (d)   => request("POST", "/api/notify-premium", d),
+  adminCreateArtisan:(d)=> request("POST", "/api/admin/artisans/create", d),
+  adminUpdateLogo:(d)   => request("PUT",  "/api/admin/logo", d),
+  adminSeedData:  ()    => request("POST", "/api/admin/seed-test-data"),
   adminAds:       ()    => request("GET",    "/api/ads/admin"),
   adminAdStats:   ()    => request("GET",    "/api/ads/admin/stats"),
   adminCreateAd:  (d)   => request("POST",   "/api/ads/admin", d),
@@ -421,19 +426,23 @@ function AuthModal({mode:initMode,onClose,onAuth}){
 // ─────────────────────────────────────────────────────────────────
 //  NAVBAR
 // ─────────────────────────────────────────────────────────────────
-function Navbar({view,setView,user,onLogout,setAuthModal}){
+function Navbar({view,setView,user,onLogout,setAuthModal,siteConfig}){
   const [sc,setSc]=useState(false);
   const [open,setOpen]=useState(false);
   useEffect(()=>{const fn=()=>setSc(window.scrollY>8);window.addEventListener("scroll",fn);return()=>window.removeEventListener("scroll",fn);},[]);
   const links=[["home","Accueil"],["artisans","Artisans"],["pricing","Tarifs"],["contact","Contact"],
-    ...(user?.type==="artisan"?[["dashboard","Mon espace"]]:user?.type==="client"?[["client-dash","Mon espace"]]:user?.type==="admin"?[["admin","Admin"]]:[] )];
+    ...(user?.type==="artisan"?[["dashboard","Mon espace"]]:user?.type==="client"?[["client-dash","Mon espace"]]:[]) ];
+  // Admin accessible via URL secrète /fixily-admin-2025
   return(
     <nav style={{position:"sticky",top:0,zIndex:100,background:sc?"rgba(240,237,232,.97)":"rgba(240,237,232,.88)",
       backdropFilter:"blur(16px)",borderBottom:`1px solid ${sc?C.border:"transparent"}`,
       boxShadow:sc?"0 1px 12px rgba(0,0,0,.07)":"none",transition:"all .3s",padding:"0 20px"}}>
       <div style={{maxWidth:1140,margin:"0 auto",display:"flex",alignItems:"center",height:60,gap:8}}>
-        <button onClick={()=>setView("home")} style={{background:"none",border:"none",cursor:"pointer",fontWeight:800,fontSize:20,color:C.text}}>
-          Fixily<span style={{color:C.orange}}>.tn</span>
+        <button onClick={()=>setView("home")} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
+          {siteConfig?.logo_url
+            ? <img src={siteConfig.logo_url} alt="Logo" style={{height:36,maxWidth:140,objectFit:"contain"}}/>
+            : <span style={{fontWeight:800,fontSize:20,color:C.text}}>Fixily<span style={{color:C.orange}}>.tn</span></span>
+          }
         </button>
         <div style={{display:"flex",gap:2,marginLeft:20,flex:1}} className="desk">
           {links.map(([v,l])=>(
@@ -479,6 +488,14 @@ function Navbar({view,setView,user,onLogout,setAuthModal}){
 function HomePage({setView,setFilterCat,setAuthModal}){
   const [city,setCity]=useState("");
   const [search,setSearch]=useState("");
+  const [stats,setStats]=useState({artisans:"...",clients:"...",rating:"..."});
+  useEffect(()=>{
+    api.getStats().then(s=>setStats({
+      artisans: s.artisans>0?`${s.artisans}+`:"0",
+      clients:  s.clients>0?`${s.clients}+`:"0",
+      rating:   s.rating>0?`${s.rating}★`:"—",
+    })).catch(()=>{});
+  },[]);
   return(
     <div>
       <div style={{minHeight:"88vh",display:"flex",flexDirection:"column",alignItems:"center",
@@ -510,7 +527,7 @@ function HomePage({setView,setFilterCat,setAuthModal}){
           <button onClick={()=>setView("artisans")} style={{background:C.orange,color:"#fff",border:"none",padding:"14px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Chercher</button>
         </div>
         <div className="fu" style={{display:"flex",gap:36,marginTop:42,flexWrap:"wrap",justifyContent:"center",animationDelay:".25s"}}>
-          {[["500+","Artisans vérifiés"],["12k+","Clients satisfaits"],["4.8★","Note moyenne"]].map(([v,l])=>(
+          {[[stats.artisans,"Artisans vérifiés"],[stats.clients,"Clients satisfaits"],[stats.rating,"Note moyenne"]].map(([v,l])=>(
             <div key={v} style={{textAlign:"center"}}>
               <div style={{fontWeight:800,fontSize:26,color:C.orange}}>{v}</div>
               <div style={{fontSize:12,color:C.muted}}>{l}</div>
@@ -1077,6 +1094,64 @@ function PhotoSubmitModal({open,request:r,onClose,onSuccess}){
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────
+//  ADMIN — Ajouter un artisan
+// ─────────────────────────────────────────────────────────────────
+function AdminAddArtisan({setToast}){
+  const [form,setForm]=useState({
+    name:"",email:"",phone:"",password:"fixily123",
+    city:"",region:"",address:"",bio:"",
+    category:"Plomberie",whatsapp:"",
+  });
+  const [loading,setLoading]=useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const submit=async()=>{
+    if(!form.name||!form.email||!form.phone||!form.city||!form.category)
+      return setToast({msg:"Tous les champs obligatoires requis.",type:"error"});
+    setLoading(true);
+    try{
+      const r = await api.adminCreateArtisan(form);
+      setToast({msg:`✅ Artisan créé ! ID: ${r.id}`,type:"success"});
+      setForm({name:"",email:"",phone:"",password:"fixily123",city:"",region:"",address:"",bio:"",category:"Plomberie",whatsapp:""});
+    }catch(e){setToast({msg:e.message,type:"error"});}
+    finally{setLoading(false);}
+  };
+
+  return(
+    <Card>
+      <h3 style={{fontWeight:700,fontSize:15,marginBottom:18}}>➕ Ajouter un artisan</h3>
+      <div style={{background:C.cardAlt,borderRadius:9,padding:"10px 14px",marginBottom:16,fontSize:13,color:C.textSub}}>
+        ℹ️ L'artisan sera créé et <strong>validé automatiquement</strong>. Mot de passe par défaut : <code>fixily123</code>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:13}}>
+        <Fld label="Nom complet *" value={form.name} onChange={e=>set("name",e.target.value)}/>
+        <Fld label="Email *" type="email" value={form.email} onChange={e=>set("email",e.target.value)}/>
+        <Fld label="Téléphone *" value={form.phone} onChange={e=>set("phone",e.target.value)} placeholder="+216XXXXXXXX"/>
+        <Fld label="WhatsApp" value={form.whatsapp} onChange={e=>set("whatsapp",e.target.value)} placeholder="+216XXXXXXXX"/>
+        <Sel label="Ville *" value={form.city} onChange={e=>set("city",e.target.value)}>
+          <option value="">Choisir…</option>
+          {TN_CITIES.map(c=><option key={c} value={c}>{c}</option>)}
+        </Sel>
+        <Sel label="Catégorie *" value={form.category} onChange={e=>set("category",e.target.value)}>
+          {CATEGORIES.map(c=><option key={c.id} value={c.label}>{c.icon} {c.label}</option>)}
+        </Sel>
+        <Fld label="Région" value={form.region} onChange={e=>set("region",e.target.value)}/>
+        <Fld label="Mot de passe" value={form.password} onChange={e=>set("password",e.target.value)}/>
+      </div>
+      <div style={{marginTop:13,display:"flex",flexDirection:"column",gap:5}}>
+        <label style={{fontSize:12,color:C.muted,fontWeight:600}}>Bio / Présentation</label>
+        <textarea value={form.bio} onChange={e=>set("bio",e.target.value)} placeholder="Description de l'artisan…"
+          style={{background:C.cardAlt,border:`1.5px solid ${C.border}`,borderRadius:9,color:C.text,
+            padding:"9px 13px",fontSize:14,outline:"none",resize:"vertical",minHeight:80,fontFamily:"inherit"}}/>
+      </div>
+      <div style={{marginTop:16}}>
+        <Btn variant="primary" loading={loading} onClick={submit}>➕ Créer l'artisan</Btn>
+      </div>
+    </Card>
+  );
+}
 // ─────────────────────────────────────────────────────────────────
 //  ADMIN DASHBOARD  (avec onglet Régie Pub)
 // ─────────────────────────────────────────────────────────────────
@@ -1120,6 +1195,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
     {id:"overview",l:"📊 Vue globale"},{id:"artisans",l:"🔧 Artisans"},
     {id:"clients",l:"👥 Clients"},{id:"requests",l:"📋 Demandes"},
     {id:"ads",l:"📢 Régie Pub"},{id:"config",l:"⚙️ Config"},
+    {id:"add-artisan",l:"➕ Ajouter Artisan"},{id:"tools",l:"🔧 Outils"},
   ];
 
   return(
@@ -1305,16 +1381,54 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
               {[["site_name","Nom du site"],["site_tagline","Slogan"],["contact_email","Email contact"],
                 ["contact_whatsapp","WhatsApp"],["contact_address","Adresse"],["contact_hours","Horaires"],
                 ["social_facebook","Facebook URL"],["footer_copyright","Copyright"],
-                ["premium_price_dt","Prix Premium (DT)"],["free_leads_per_month","Leads gratuits/mois"],
               ].map(([k,l])=>(
                 <Fld key={k} label={l} value={cfgDraft[k]||""} onChange={e=>setCfgDraft(d=>({...d,[k]:e.target.value}))}/>
               ))}
+              <Fld label="Prix Premium (DT/mois)" type="number" value={cfgDraft["premium_price_dt"]||"19"} onChange={e=>setCfgDraft(d=>({...d,premium_price_dt:e.target.value}))}/>
+              <Fld label="Leads gratuits/mois" type="number" value={cfgDraft["free_leads_per_month"]||"5"} onChange={e=>setCfgDraft(d=>({...d,free_leads_per_month:e.target.value}))}/>
             </div>
+          </Card>
+          {/* Logo */}
+          <Card>
+            <h3 style={{fontWeight:700,fontSize:15,marginBottom:16}}>🖼️ Logo du site</h3>
+            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+              <Fld label="URL du logo (laissez vide pour texte)" value={cfgDraft["logo_url"]||""} onChange={e=>setCfgDraft(d=>({...d,logo_url:e.target.value}))} style={{flex:1,minWidth:250}}/>
+              {cfgDraft["logo_url"]&&<img src={cfgDraft["logo_url"]} alt="Logo preview" style={{height:40,borderRadius:6,border:`1px solid ${C.border}`}} onError={e=>e.target.style.display="none"}/>}
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:6}}>Uploadez votre logo sur imgur.com ou imgbb.com et copiez l'URL directe ici.</div>
           </Card>
           <div style={{display:"flex",gap:10}}>
             <Btn variant="primary" size="lg" onClick={saveConfig}>💾 Sauvegarder</Btn>
             <Btn variant="secondary" onClick={()=>api.adminRecalcBadges().then(()=>setToast({msg:"Badges recalculés !",type:"success"}))}>🏅 Recalculer badges</Btn>
           </div>
+        </div>
+      )}
+
+      {/* ── AJOUTER ARTISAN ── */}
+      {tab==="add-artisan"&&<AdminAddArtisan setToast={setToast}/>}
+
+      {/* ── OUTILS ── */}
+      {tab==="tools"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <Card>
+            <h3 style={{fontWeight:700,marginBottom:16}}>🔧 Outils d'administration</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{background:C.cardAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:16}}>
+                <div style={{fontWeight:700,marginBottom:6}}>📊 Créer données de test</div>
+                <div style={{fontSize:13,color:C.muted,marginBottom:12}}>Crée 10 artisans + 20 clients de test (mot de passe: fixily123)</div>
+                <Btn variant="primary" onClick={()=>api.adminSeedData().then(r=>{setToast({msg:r.message,type:"success"});}).catch(e=>setToast({msg:e.message,type:"error"}))}>
+                  🚀 Créer données de test
+                </Btn>
+              </div>
+              <div style={{background:`${C.orange}08`,border:`1px solid ${C.orange}28`,borderRadius:10,padding:16}}>
+                <div style={{fontWeight:700,marginBottom:6}}>🔑 Lien secret admin</div>
+                <div style={{fontSize:13,color:C.muted,marginBottom:8}}>Partagez ce lien uniquement avec les admins :</div>
+                <code style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:6,padding:"6px 10px",fontSize:12,display:"block"}}>
+                  /fixily-admin-2025
+                </code>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -1424,7 +1538,51 @@ function AdFormModal({open,ad,onClose,onSave}){
 // ─────────────────────────────────────────────────────────────────
 //  PRICING + CONTACT + FOOTER
 // ─────────────────────────────────────────────────────────────────
-function PricingPage({setAuthModal}){
+function NotifyModal(){
+  const [open,setOpen]=useState(false);
+  const [form,setForm]=useState({email:"",whatsapp:""});
+  const [sent,setSent]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const submit=async()=>{
+    if(!form.email&&!form.whatsapp) return alert("Email ou WhatsApp requis.");
+    setLoading(true);
+    try{
+      await api.notifyPremium(form);
+      setSent(true);
+      setTimeout(()=>{setOpen(false);setSent(false);},2000);
+    }catch(e){alert(e.message);}
+    finally{setLoading(false);}
+  };
+  return(
+    <>
+      <button onClick={()=>setOpen(true)} style={{width:"100%",background:"#EDE8F9",color:"#7C3AED",border:"2px solid #C4B5E8",borderRadius:9,padding:"13px 0",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:16,transition:"all .2s"}}
+        onMouseEnter={e=>e.target.style.background="#D8B4FE"}
+        onMouseLeave={e=>e.target.style.background="#EDE8F9"}>
+        🔔 Me notifier au lancement
+      </button>
+      <Modal open={open} onClose={()=>setOpen(false)} title="Me notifier au lancement Premium">
+        {sent?(
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <div style={{fontSize:40,marginBottom:10}}>✅</div>
+            <p style={{fontWeight:700,color:C.green}}>Vous serez notifié au lancement !</p>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:13}}>
+            <p style={{fontSize:13,color:C.muted}}>Laissez votre email ou WhatsApp — nous vous contactons dès le lancement Premium.</p>
+            <Fld label="Email" type="email" placeholder="votre@email.com" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/>
+            <Fld label="WhatsApp (optionnel)" placeholder="+216 XX XXX XXX" value={form.whatsapp} onChange={e=>setForm(f=>({...f,whatsapp:e.target.value}))}/>
+            <div style={{display:"flex",gap:9}}>
+              <Btn variant="purple" loading={loading} onClick={submit} style={{flex:1}}>🔔 Me notifier</Btn>
+              <Btn variant="secondary" onClick={()=>setOpen(false)}>Annuler</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+
+function PricingPage({setAuthModal,siteConfig}){
   return(
     <div style={{padding:"52px 20px",maxWidth:860,margin:"0 auto"}}>
       <div style={{textAlign:"center",marginBottom:44}}>
@@ -1445,11 +1603,11 @@ function PricingPage({setAuthModal}){
         <div style={{background:`linear-gradient(140deg,#F8F5FF,${C.card})`,border:`2px dashed #C4B5E8`,borderRadius:20,padding:28,position:"relative"}}>
           <div style={{position:"absolute",top:-13,left:"50%",transform:"translateX(-50%)",background:C.purple,color:"#fff",borderRadius:100,padding:"3px 18px",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>⏳ Bientôt</div>
           <div style={{fontWeight:800,fontSize:20,color:C.purple,marginBottom:6}}>Premium</div>
-          <div style={{marginBottom:18}}><span style={{fontWeight:800,fontSize:42}}>19</span><span style={{color:C.muted,fontSize:14}}> DT/mois</span></div>
+          <div style={{marginBottom:18}}><span style={{fontWeight:800,fontSize:42}}>{siteConfig?.premium_price_dt||"19"}</span><span style={{color:C.muted,fontSize:14}}> DT/mois</span></div>
           {["Leads illimités","Profil mis en avant","Badge Premium","Support dédié"].map(f=>(
             <div key={f} style={{display:"flex",gap:10,alignItems:"center",marginBottom:9}}><span style={{color:"#C4B5E8"}}>◇</span><span style={{fontSize:14,color:C.muted}}>{f}</span></div>
           ))}
-          <button disabled style={{width:"100%",background:"#EDE8F9",color:"#9B7FD4",border:"1px solid #C4B5E8",borderRadius:9,padding:"13px 0",fontSize:15,fontWeight:700,cursor:"not-allowed",fontFamily:"inherit",marginTop:16}}>🔔 Me notifier</button>
+          <NotifyModal/>
         </div>
       </div>
     </div>
@@ -1462,7 +1620,10 @@ function ContactPage({cfg}){
   const [loading,setLoading]=useState(false);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{
-    if(!form.name||!form.msg)return;
+    if(!form.name||!form.msg) return alert("Nom et message requis.");
+    if(!form.email) return alert("Email requis.");
+    const tel = form.phone.replace(/\s/g,"");
+    if(!tel||!/^\+216[0-9]{8}$/.test(tel)) return alert("Téléphone tunisien requis (ex: +21698999999).");
     setLoading(true);
     try{await api.sendContact({name:form.name,email:form.email,phone:form.phone,message:form.msg});setSent(true);}
     catch(e){alert(e.message);}
@@ -1498,8 +1659,8 @@ function ContactPage({cfg}){
           {sent?<div style={{textAlign:"center",padding:"32px 0"}}><div style={{fontSize:44,marginBottom:14}}>✅</div><h4 style={{fontWeight:700}}>Message envoyé !</h4></div>:(
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <Fld label="Nom *" value={form.name} onChange={e=>set("name",e.target.value)}/>
-              <Fld label="Email" type="email" value={form.email} onChange={e=>set("email",e.target.value)}/>
-              <Fld label="Téléphone" value={form.phone} onChange={e=>set("phone",e.target.value)}/>
+              <Fld label="Email *" type="email" value={form.email} onChange={e=>set("email",e.target.value)}/>
+              <Fld label="Téléphone * (ex: +21698999999)" value={form.phone} onChange={e=>set("phone",e.target.value)} placeholder="+21698999999"/>
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 <label style={{fontSize:12,color:C.muted,fontWeight:600}}>Message *</label>
                 <textarea value={form.msg} onChange={e=>set("msg",e.target.value)} placeholder="Comment pouvons-nous vous aider ?"
@@ -1584,16 +1745,16 @@ export default function App(){
     <>
       <style>{GS}</style>
       <div style={{minHeight:"100vh",background:C.bg,color:C.text,display:"flex",flexDirection:"column"}}>
-        <Navbar view={view} setView={nav} user={user} onLogout={handleLogout} setAuthModal={setAuthModal}/>
+        <Navbar view={view} setView={nav} user={user} onLogout={handleLogout} setAuthModal={setAuthModal} siteConfig={siteConfig}/>
         <main style={{flex:1}}>
           {view==="home"       &&<HomePage       setView={nav} setFilterCat={setFilterCat} setAuthModal={setAuthModal}/>}
           {view==="artisans"   &&<ArtisansPage   setView={nav} setSelectedArtisan={setSelectedArtisan} filterCat={filterCat} setFilterCat={setFilterCat} user={user} setAuthModal={setAuthModal}/>}
           {view==="profile"    &&<ProfilePage    artisan={selectedArtisan} setView={nav} user={user} setAuthModal={setAuthModal} setToast={setToast}/>}
-          {view==="pricing"    &&<PricingPage    setAuthModal={setAuthModal}/>}
+          {view==="pricing"    &&<PricingPage    setAuthModal={setAuthModal} siteConfig={siteConfig}/>}
           {view==="contact"    &&<ContactPage    cfg={siteConfig}/>}
           {view==="dashboard"  &&(user?.type==="artisan"?<ArtisanDash user={user} setUser={setUser} setToast={setToast}/>:<div style={{padding:48,textAlign:"center",color:C.muted}}>Connectez-vous en tant qu'artisan.</div>)}
           {view==="client-dash"&&(user?.type==="client"?<ClientDash user={user} setUser={setUser} setView={nav} setToast={setToast}/>:<div style={{padding:48,textAlign:"center",color:C.muted}}>Connectez-vous en tant que client.</div>)}
-          {view==="admin"      &&(user?.type==="admin"?<AdminDash siteConfig={siteConfig} setSiteConfig={setSiteConfig} setToast={setToast}/>:<div style={{padding:48,textAlign:"center",color:C.red}}>Accès admin requis.</div>)}
+          {view==="fixily-admin-2025" &&(user?.type==="admin"?<AdminDash siteConfig={siteConfig} setSiteConfig={setSiteConfig} setToast={setToast}/>:<div style={{padding:48,textAlign:"center",color:C.red}}>Accès administrateur requis.</div>)}
         </main>
         <Footer setView={nav} cfg={siteConfig}/>
       </div>
