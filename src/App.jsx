@@ -527,8 +527,12 @@ function HomePage({setView,setFilterCat,setAuthModal}){
           <button onClick={()=>setView("artisans")} style={{background:C.orange,color:"#fff",border:"none",padding:"14px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Chercher</button>
         </div>
         <div className="fu" style={{display:"flex",gap:36,marginTop:42,flexWrap:"wrap",justifyContent:"center",animationDelay:".25s"}}>
-          {[[stats.artisans,"Artisans vérifiés"],[stats.clients,"Clients satisfaits"],[stats.rating,"Note moyenne"]].map(([v,l])=>(
-            <div key={v} style={{textAlign:"center"}}>
+          {[
+            [stats.artisans,"Artisans vérifiés"],
+            [stats.clients,"Clients satisfaits"],
+            [stats.rating,"Note moyenne"]
+          ].map(([v,l])=>(
+            <div key={l} style={{textAlign:"center"}}>
               <div style={{fontWeight:800,fontSize:26,color:C.orange}}>{v}</div>
               <div style={{fontSize:12,color:C.muted}}>{l}</div>
             </div>
