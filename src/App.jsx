@@ -1724,6 +1724,10 @@ export default function App(){
   useEffect(()=>{
     const token=localStorage.getItem("fixily_token");
     if(token)api.me().then(setUser).catch(()=>localStorage.removeItem("fixily_token"));
+    // Détecter URL secrète admin
+    if(window.location.pathname==="/fixily-admin-2025"){
+      setView("fixily-admin-2025");
+    }
   },[]);
   useEffect(()=>{
     if(!cfgLoaded)api.getConfig().then(c=>{setSiteConfig(c);setCfgLoaded(true);}).catch(()=>{});
@@ -1736,7 +1740,7 @@ export default function App(){
   const handleAuth=u=>{
     setUser(u);setAuthModal(null);
     if(u.type==="artisan")nav("dashboard");
-    else if(u.type==="admin")nav("admin");
+    else if(u.type==="admin")nav("fixily-admin-2025");
     else nav("client-dash");
   };
   const handleLogout=()=>{localStorage.removeItem("fixily_token");setUser(null);nav("home");};
