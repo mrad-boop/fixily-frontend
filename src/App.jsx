@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 // ─────────────────────────────────────────────────────────────────
 //  COUCHE API  (inline — pas d'import externe)
 // ─────────────────────────────────────────────────────────────────
-const BASE = "https://fixily-backend.onrender.com"; // ← remplacer par l'URL Render en prod
+const BASE = "http://localhost:3001"; // ← remplacer par l'URL Render en prod
 
 function getToken() { return localStorage.getItem("fixily_token"); }
 
@@ -70,6 +70,7 @@ const api = {
   adminResolveReport:(id,d)   => request("PUT", `/api/admin/reports/${id}`, d),
   adminRecalcBadges:()  => request("POST", "/api/admin/recalc-badges"),
   adminMarkRead:  (id)  => request("PUT",  `/api/admin/messages/${id}/read`),
+  adminDeleteUser:(id)  => request("DELETE", `/api/admin/users/${id}`),
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -136,8 +137,24 @@ function AdBanner({ position = "both", style: s = {} }) {
 
   useEffect(() => {
     let cancelled = false;
-    api.getActiveAd(position)
-      .then(res => { if (!cancelled) setAdData(res); })
+    // Vérifier si cet emplacement a déjà été vu aujourd'hui (localStorage)
+    const today = new Date().toISOString().slice(0,10);
+    const seenKey = `fixily_ad_seen_${position}_${today}`;
+    const alreadySeen = localStorage.getItem(seenKey) === '1';
+
+    fetch(`${BASE}/api/ads/active${position ? `?position=${position}` : ''}`, {
+      headers: { 'x-count-impression': alreadySeen ? 'false' : 'true' }
+    })
+      .then(r=>r.json())
+      .then(res => {
+        if(!cancelled){
+          setAdData(res);
+          // Marquer comme vu aujourd'hui si une pub a été affichée
+          if(res && !res.empty && !alreadySeen){
+            localStorage.setItem(seenKey, '1');
+          }
+        }
+      })
       .catch(() => { if (!cancelled) setAdData({ empty: true }); });
     return () => { cancelled = true; };
   }, [position]);
@@ -1033,12 +1050,7 @@ function ArtisanDash({user,setUser,setToast}){
       {tab==="requests"&&(loading?<Spinner/>:(pending.length===0?<Card style={{textAlign:"center",padding:48}}><p style={{color:C.muted}}>Aucune nouvelle demande.</p></Card>:pending.map(r=><RRow key={r.id} r={r}/>)))}
       {tab==="active"&&(loading?<Spinner/>:(active.length===0?<Card style={{textAlign:"center",padding:48}}><p style={{color:C.muted}}>Aucune intervention en cours.</p></Card>:active.map(r=><RRow key={r.id} r={r}/>)))}
       {tab==="history"&&(loading?<Spinner/>:(done.length===0?<Card style={{textAlign:"center",padding:48}}><p style={{color:C.muted}}>Historique vide.</p></Card>:done.map(r=><RRow key={r.id} r={r}/>)))}
-      {tab==="profile"&&(
-        <Card>
-          <h3 style={{fontWeight:700,fontSize:15,marginBottom:18}}>Mon profil artisan</h3>
-          <div style={{fontSize:13,color:C.muted}}>Utilisez l'onglet Profil pour modifier vos informations.</div>
-        </Card>
-      )}
+      {tab==="profile"&&<ArtisanProfileEditor user={user} setUser={setUser} setToast={setToast}/>}
       {tab==="plan"&&(
         <Card>
           <h3 style={{fontWeight:700,marginBottom:18}}>Mon abonnement</h3>
@@ -1250,6 +1262,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
                       <div style={{display:"flex",gap:6}}>
                         {!a.is_validated&&<Btn variant="green" size="sm" onClick={()=>api.adminValidateArtisan(a.id).then(()=>{api.adminArtisans().then(setArtisans);setToast({msg:"Validé",type:"success"})})}>✓</Btn>}
                         <Btn variant="danger" size="sm" onClick={()=>api.adminSuspend(a.id).then(()=>api.adminArtisans().then(setArtisans))}>Suspendre</Btn>
+                        <Btn variant="danger" size="sm" onClick={()=>{if(window.confirm("Supprimer cet artisan ?"))api.adminDeleteUser(a.id).then(()=>api.adminArtisans().then(setArtisans)).catch(e=>setToast({msg:e.message,type:"error"}));}}>🗑 Suppr.</Btn>
                         <Btn variant="purple" size="sm" onClick={()=>api.adminSetPlan(a.id,{plan:a.plan==="premium"?"free":"premium"}).then(()=>api.adminArtisans().then(setArtisans))}>
                           {a.plan==="premium"?"→ Gratuit":"→ Premium"}
                         </Btn>
@@ -1268,7 +1281,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr style={{background:C.cardAlt,borderBottom:`2px solid ${C.border}`}}>
-                {["Client","Email","Téléphone","Ville","Demandes","Inscrit"].map(h=>(
+                {["Client","Email","Téléphone","Ville","Demandes","Inscrit","Action"].map(h=>(
                   <th key={h} style={{padding:"10px 13px",textAlign:"left",fontSize:12,fontWeight:700,color:C.muted}}>{h}</th>
                 ))}
               </tr></thead>
@@ -1281,6 +1294,9 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
                     <td style={{padding:"10px 13px",fontSize:13}}>{c.city||"—"}</td>
                     <td style={{padding:"10px 13px",fontSize:13}}>{c.requests_count||0}</td>
                     <td style={{padding:"10px 13px",fontSize:12,color:C.muted}}>{new Date(c.created_at).toLocaleDateString("fr-TN")}</td>
+                    <td style={{padding:"10px 13px"}}>
+                      <Btn variant="danger" size="sm" onClick={()=>{if(window.confirm("Supprimer ce client ?"))api.adminDeleteUser(c.id).then(()=>api.adminClients().then(setClients)).catch(e=>setToast({msg:e.message,type:"error"}));}}>🗑</Btn>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1395,11 +1411,29 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
           {/* Logo */}
           <Card>
             <h3 style={{fontWeight:700,fontSize:15,marginBottom:16}}>🖼️ Logo du site</h3>
-            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-              <Fld label="URL du logo (laissez vide pour texte)" value={cfgDraft["logo_url"]||""} onChange={e=>setCfgDraft(d=>({...d,logo_url:e.target.value}))} style={{flex:1,minWidth:250}}/>
-              {cfgDraft["logo_url"]&&<img src={cfgDraft["logo_url"]} alt="Logo preview" style={{height:40,borderRadius:6,border:`1px solid ${C.border}`}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <label style={{background:C.orange,color:"#fff",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                  📁 Choisir depuis mon PC
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file=e.target.files[0];
+                    if(!file)return;
+                    const reader=new FileReader();
+                    reader.onload=ev=>setCfgDraft(d=>({...d,logo_url:ev.target.result}));
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+                <span style={{fontSize:12,color:C.muted}}>ou</span>
+                <Fld label="" placeholder="URL du logo (https://...)" value={cfgDraft["logo_url"]?.startsWith("data:")?"":(cfgDraft["logo_url"]||"")} onChange={e=>setCfgDraft(d=>({...d,logo_url:e.target.value}))} style={{flex:1,minWidth:200}}/>
+              </div>
+              {cfgDraft["logo_url"]&&(
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <img src={cfgDraft["logo_url"]} alt="Aperçu logo" style={{height:50,maxWidth:200,objectFit:"contain",borderRadius:8,border:`1px solid ${C.border}`,background:C.cardAlt,padding:6}} onError={e=>e.target.style.display="none"}/>
+                  <Btn variant="danger" size="sm" onClick={()=>setCfgDraft(d=>({...d,logo_url:""}))}>✕ Supprimer</Btn>
+                </div>
+              )}
+              <div style={{fontSize:12,color:C.muted}}>Formats acceptés : PNG, JPG, SVG. Taille recommandée : 200×60px max.</div>
             </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:6}}>Uploadez votre logo sur imgur.com ou imgbb.com et copiez l'URL directe ici.</div>
           </Card>
           <div style={{display:"flex",gap:10}}>
             <Btn variant="primary" size="lg" onClick={saveConfig}>💾 Sauvegarder</Btn>
