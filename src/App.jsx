@@ -503,7 +503,7 @@ function Navbar({view,setView,user,onLogout,setAuthModal,siteConfig}){
 // ─────────────────────────────────────────────────────────────────
 //  HOME PAGE
 // ─────────────────────────────────────────────────────────────────
-function HomePage({setView,setFilterCat,setAuthModal}){
+function HomePage({setView,setFilterCat,setFilterSearch,setFilterCity,setAuthModal}){
   const [city,setCity]=useState("");
   const [search,setSearch]=useState("");
   const [stats,setStats]=useState({artisans:"...",clients:"...",rating:"..."});
@@ -542,7 +542,11 @@ function HomePage({setView,setFilterCat,setAuthModal}){
             style={{background:"none",border:"none",outline:"none",padding:"14px 13px",fontSize:14,color:city?C.text:C.muted,minWidth:110,cursor:"pointer"}}>
             <option value="">📍 Ville</option>{TN_CITIES.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
-          <button onClick={()=>setView("artisans")} style={{background:C.orange,color:"#fff",border:"none",padding:"14px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Chercher</button>
+          <button onClick={()=>{
+            if(search.trim())setFilterSearch(search.trim());
+            if(city)setFilterCity(city);
+            setView("artisans");
+          }} style={{background:C.orange,color:"#fff",border:"none",padding:"14px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Chercher</button>
         </div>
         <div className="fu" style={{display:"flex",gap:36,marginTop:42,flexWrap:"wrap",justifyContent:"center",animationDelay:".25s"}}>
           {[
@@ -617,15 +621,21 @@ function HomePage({setView,setFilterCat,setAuthModal}){
 // ─────────────────────────────────────────────────────────────────
 //  ARTISANS PAGE
 // ─────────────────────────────────────────────────────────────────
-function ArtisansPage({setView,setSelectedArtisan,filterCat,setFilterCat,user,setAuthModal}){
+function ArtisansPage({setView,setSelectedArtisan,filterCat,setFilterCat,filterSearch,setFilterSearch,filterCity,setFilterCity,user,setAuthModal}){
   const [artisans,setArtisans]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [search,setSearch]=useState("");
-  const [city,setCity]=useState("");
+  const [search,setSearch]=useState(filterSearch||"");
+  const [city,setCity]=useState(filterCity||"");
   const [activeCat,setActiveCat]=useState(filterCat||"");
   const [sort,setSort]=useState("rating");
 
   useEffect(()=>{if(filterCat)setActiveCat(filterCat);},[filterCat]);
+  useEffect(()=>{
+    if(filterSearch){setSearch(filterSearch);setFilterSearch("");}
+  },[filterSearch]);
+  useEffect(()=>{
+    if(filterCity){setCity(filterCity);setFilterCity("");}
+  },[filterCity]);
   useEffect(()=>{
     setLoading(true);
     const params={};
@@ -2064,6 +2074,8 @@ export default function App(){
   const [authModal,setAuthModal]=useState(null);
   const [selectedArtisan,setSelectedArtisan]=useState(null);
   const [filterCat,setFilterCat]=useState(null);
+  const [filterSearch,setFilterSearch]=useState("");
+  const [filterCity,setFilterCity]=useState("");
   const [toast,setToast]=useState(null);
   const [siteConfig,setSiteConfig]=useState({});
   const [cfgLoaded,setCfgLoaded]=useState(false);
@@ -2098,8 +2110,8 @@ export default function App(){
       <div style={{minHeight:"100vh",background:C.bg,color:C.text,display:"flex",flexDirection:"column"}}>
         <Navbar view={view} setView={nav} user={user} onLogout={handleLogout} setAuthModal={setAuthModal} siteConfig={siteConfig}/>
         <main style={{flex:1}}>
-          {view==="home"       &&<HomePage       setView={nav} setFilterCat={setFilterCat} setAuthModal={setAuthModal}/>}
-          {view==="artisans"   &&<ArtisansPage   setView={nav} setSelectedArtisan={setSelectedArtisan} filterCat={filterCat} setFilterCat={setFilterCat} user={user} setAuthModal={setAuthModal}/>}
+          {view==="home"       &&<HomePage       setView={nav} setFilterCat={setFilterCat} setFilterSearch={setFilterSearch} setFilterCity={setFilterCity} setAuthModal={setAuthModal}/>}
+          {view==="artisans"   &&<ArtisansPage   setView={nav} setSelectedArtisan={setSelectedArtisan} filterCat={filterCat} setFilterCat={setFilterCat} filterSearch={filterSearch} setFilterSearch={setFilterSearch} filterCity={filterCity} setFilterCity={setFilterCity} user={user} setAuthModal={setAuthModal}/>}
           {view==="profile"    &&<ProfilePage    artisan={selectedArtisan} setView={nav} user={user} setAuthModal={setAuthModal} setToast={setToast}/>}
           {view==="pricing"    &&<PricingPage    setAuthModal={setAuthModal} siteConfig={siteConfig}/>}
           {view==="contact"    &&<ContactPage    cfg={siteConfig}/>}
