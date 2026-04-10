@@ -1144,8 +1144,7 @@ function ExportPanel({artisans, clients}){
       headers.join(";"),
       ...rows.map(r=>headers.map(h=>escape(r[h.toLowerCase().replace(/ /g,"_")]||r[Object.keys(r)[headers.indexOf(h)]]||"")).join(";")),
     ];
-    const blob = new Blob(["﻿"+lines.join("
-")], {type:"text/csv;charset=utf-8;"});
+    const blob = new Blob(["﻿"+lines.join("\n")], {type:"text/csv;charset=utf-8;"});
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href=url; a.download=filename; a.click();
@@ -1745,8 +1744,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
               }));
               const escape=v=>`"${String(v||"").replace(/"/g,'""')}"`;
               const lines=[headers.join(";"),...rows.map(r=>Object.values(r).map(escape).join(";"))];
-              const blob=new Blob(["﻿"+lines.join("
-")],{type:"text/csv;charset=utf-8;"});
+              const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8;"});
               const url=URL.createObjectURL(blob);
               const a=document.createElement("a");
               a.href=url;a.download=`fixily_consultations_${new Date().toISOString().slice(0,10)}.csv`;a.click();
