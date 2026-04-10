@@ -71,6 +71,7 @@ const api = {
   adminRecalcBadges:()  => request("POST", "/api/admin/recalc-badges"),
   adminMarkRead:  (id)  => request("PUT",  `/api/admin/messages/${id}/read`),
   adminDeleteUser:(id)  => request("DELETE", `/api/admin/users/${id}`),
+  adminViewStats: ()    => request("GET",    "/api/admin/stats/views"),
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -1111,6 +1112,213 @@ function PhotoSubmitModal({open,request:r,onClose,onSuccess}){
 }
 
 
+
+// ─────────────────────────────────────────────────────────────────
+//  EXPORT CSV — Admin
+// ─────────────────────────────────────────────────────────────────
+function ExportPanel({artisans, clients}){
+  const [filterRegion, setFilterRegion] = useState("");
+  const [filterSpec,   setFilterSpec]   = useState("");
+  const [filterType,   setFilterType]   = useState("all"); // all | artisans | clients
+
+  // Listes uniques pour les filtres
+  const regions  = [...new Set([
+    ...artisans.map(a=>a.city).filter(Boolean),
+    ...clients.map(c=>c.city).filter(Boolean),
+  ])].sort();
+  const specs = [...new Set(artisans.map(a=>a.category).filter(Boolean))].sort();
+
+  // Données filtrées
+  const filteredArtisans = artisans
+    .filter(a=>!filterRegion || a.city===filterRegion)
+    .filter(a=>!filterSpec   || a.category===filterSpec);
+
+  const filteredClients = clients
+    .filter(c=>!filterRegion || c.city===filterRegion);
+
+  // Générer et télécharger un CSV
+  const downloadCSV = (rows, filename, headers) => {
+    if(!rows.length){ alert("Aucune donnée à exporter."); return; }
+    const escape = v => `"${String(v||"").replace(/"/g,'""')}"`;
+    const lines  = [
+      headers.join(";"),
+      ...rows.map(r=>headers.map(h=>escape(r[h.toLowerCase().replace(/ /g,"_")]||r[Object.keys(r)[headers.indexOf(h)]]||"")).join(";")),
+    ];
+    const blob = new Blob(["﻿"+lines.join("
+")], {type:"text/csv;charset=utf-8;"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download=filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Export artisans
+  const exportArtisans = () => {
+    const rows = filteredArtisans.map(a=>({
+      "Nom":          a.name||"",
+      "Email":        a.email||"",
+      "Téléphone":    a.phone||"",
+      "Ville":        a.city||"",
+      "Spécialité":   a.category||"",
+      "Plan":         a.plan||"free",
+      "Note":         a.rating||"",
+      "Interventions":a.jobs_count||0,
+      "Avis":         a.reviews_count||0,
+      "Validé":       a.is_validated?"Oui":"Non",
+      "Inscrit":      a.created_at?new Date(a.created_at).toLocaleDateString("fr-TN"):"",
+    }));
+    const headers=["Nom","Email","Téléphone","Ville","Spécialité","Plan","Note","Interventions","Avis","Validé","Inscrit"];
+    const suffix = [filterRegion,filterSpec].filter(Boolean).join("_")||"tous";
+    downloadCSV(rows, `fixily_artisans_${suffix}_${new Date().toISOString().slice(0,10)}.csv`, headers);
+  };
+
+  // Export clients
+  const exportClients = () => {
+    const rows = filteredClients.map(c=>({
+      "Nom":      c.name||"",
+      "Email":    c.email||"",
+      "Téléphone":c.phone||"",
+      "Ville":    c.city||"",
+      "Région":   c.region||"",
+      "Demandes": c.requests_count||0,
+      "Avis":     c.reviews_count||0,
+      "Inscrit":  c.created_at?new Date(c.created_at).toLocaleDateString("fr-TN"):"",
+    }));
+    const headers=["Nom","Email","Téléphone","Ville","Région","Demandes","Avis","Inscrit"];
+    const suffix = filterRegion||"tous";
+    downloadCSV(rows, `fixily_clients_${suffix}_${new Date().toISOString().slice(0,10)}.csv`, headers);
+  };
+
+  // Export tout
+  const exportAll = () => {
+    exportArtisans();
+    setTimeout(exportClients, 500);
+  };
+
+  const C2=C; // alias local
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Filtres */}
+      <Card>
+        <h3 style={{fontWeight:700,fontSize:15,marginBottom:16}}>📥 Export CSV</h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:13,marginBottom:16}}>
+          <Sel label="Filtrer par ville/région" value={filterRegion} onChange={e=>setFilterRegion(e.target.value)}>
+            <option value="">Toutes les villes</option>
+            {regions.map(r=><option key={r} value={r}>{r}</option>)}
+          </Sel>
+          <Sel label="Filtrer par spécialité" value={filterSpec} onChange={e=>setFilterSpec(e.target.value)}>
+            <option value="">Toutes les spécialités</option>
+            {specs.map(s=><option key={s} value={s}>{s}</option>)}
+          </Sel>
+          <Sel label="Type d'export" value={filterType} onChange={e=>setFilterType(e.target.value)}>
+            <option value="all">Artisans + Clients</option>
+            <option value="artisans">Artisans seulement</option>
+            <option value="clients">Clients seulement</option>
+          </Sel>
+        </div>
+
+        {/* Stats du filtre courant */}
+        <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+          {(filterType==="all"||filterType==="artisans")&&(
+            <div style={{background:C2.og,border:`1px solid ${C2.orange}28`,borderRadius:9,padding:"10px 16px",fontSize:13}}>
+              🔧 <strong style={{color:C2.orange}}>{filteredArtisans.length}</strong> artisan(s) sélectionné(s)
+              {filterSpec&&<span style={{color:C2.muted}}> • {filterSpec}</span>}
+              {filterRegion&&<span style={{color:C2.muted}}> • {filterRegion}</span>}
+            </div>
+          )}
+          {(filterType==="all"||filterType==="clients")&&(
+            <div style={{background:C2.gbg,border:`1px solid ${C2.green}28`,borderRadius:9,padding:"10px 16px",fontSize:13}}>
+              👥 <strong style={{color:C2.green}}>{filteredClients.length}</strong> client(s) sélectionné(s)
+              {filterRegion&&<span style={{color:C2.muted}}> • {filterRegion}</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Boutons export */}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {(filterType==="all"||filterType==="artisans")&&(
+            <Btn variant="primary" onClick={exportArtisans}>
+              ⬇️ Exporter Artisans ({filteredArtisans.length})
+            </Btn>
+          )}
+          {(filterType==="all"||filterType==="clients")&&(
+            <Btn variant="green" onClick={exportClients}>
+              ⬇️ Exporter Clients ({filteredClients.length})
+            </Btn>
+          )}
+          {filterType==="all"&&(
+            <Btn variant="secondary" onClick={exportAll}>
+              ⬇️ Exporter Tout
+            </Btn>
+          )}
+        </div>
+      </Card>
+
+      {/* Aperçu artisans */}
+      {(filterType==="all"||filterType==="artisans")&&filteredArtisans.length>0&&(
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C2.border}`,fontWeight:700,fontSize:14}}>
+            🔧 Aperçu artisans ({filteredArtisans.length})
+          </div>
+          <div style={{overflowX:"auto",maxHeight:300}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:C2.cardAlt}}>
+                {["Nom","Email","Ville","Spécialité","Plan","Note"].map(h=>(
+                  <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:C2.muted,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filteredArtisans.slice(0,50).map((a,i)=>(
+                  <tr key={a.id} style={{borderBottom:`1px solid ${C2.border}`,background:i%2?C2.cardAlt:C2.card}}>
+                    <td style={{padding:"7px 12px",fontWeight:600}}>{a.name}</td>
+                    <td style={{padding:"7px 12px",color:C2.muted}}>{a.email}</td>
+                    <td style={{padding:"7px 12px"}}>{a.city}</td>
+                    <td style={{padding:"7px 12px"}}>{a.category}</td>
+                    <td style={{padding:"7px 12px"}}><Chip color={a.plan==="premium"?C2.purple:C2.muted}>{a.plan||"free"}</Chip></td>
+                    <td style={{padding:"7px 12px",color:C2.yellow}}>⭐ {a.rating||"—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredArtisans.length>50&&<div style={{padding:"8px 12px",fontSize:12,color:C2.muted}}>... et {filteredArtisans.length-50} autres dans le fichier CSV</div>}
+          </div>
+        </Card>
+      )}
+
+      {/* Aperçu clients */}
+      {(filterType==="all"||filterType==="clients")&&filteredClients.length>0&&(
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C2.border}`,fontWeight:700,fontSize:14}}>
+            👥 Aperçu clients ({filteredClients.length})
+          </div>
+          <div style={{overflowX:"auto",maxHeight:300}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:C2.cardAlt}}>
+                {["Nom","Email","Téléphone","Ville","Région","Demandes"].map(h=>(
+                  <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:C2.muted,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filteredClients.slice(0,50).map((c,i)=>(
+                  <tr key={c.id} style={{borderBottom:`1px solid ${C2.border}`,background:i%2?C2.cardAlt:C2.card}}>
+                    <td style={{padding:"7px 12px",fontWeight:600}}>{c.name}</td>
+                    <td style={{padding:"7px 12px",color:C2.muted}}>{c.email}</td>
+                    <td style={{padding:"7px 12px"}}>{c.phone||"—"}</td>
+                    <td style={{padding:"7px 12px"}}>{c.city||"—"}</td>
+                    <td style={{padding:"7px 12px"}}>{c.region||"—"}</td>
+                    <td style={{padding:"7px 12px"}}>{c.requests_count||0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredClients.length>50&&<div style={{padding:"8px 12px",fontSize:12,color:C2.muted}}>... et {filteredClients.length-50} autres dans le fichier CSV</div>}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  ADMIN — Ajouter un artisan
 // ─────────────────────────────────────────────────────────────────
@@ -1178,6 +1386,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
   const [clients,setClients]=useState([]);
   const [requests,setRequests]=useState([]);
   const [ads,setAds]=useState([]);
+  const [viewStats,setViewStats]=useState({artisans:[],total_views:0});
   const [adStats,setAdStats]=useState({});
   const [adModal,setAdModal]=useState(null); // null | "create" | ad object
   const [cfgDraft,setCfgDraft]=useState({});
@@ -1185,8 +1394,9 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
 
   useEffect(()=>{api.adminDashboard().then(setData).catch(()=>{});},[]);
   useEffect(()=>{
-    if(tab==="artisans")api.adminArtisans().then(setArtisans).catch(()=>{});
-    if(tab==="clients")api.adminClients().then(setClients).catch(()=>{});
+    if(tab==="artisans"||tab==="export")api.adminArtisans().then(setArtisans).catch(()=>{});
+    if(tab==="clients"||tab==="export")api.adminClients().then(setClients).catch(()=>{});
+    if(tab==="views")api.adminViewStats().then(r=>setViewStats(r)).catch(()=>{});
     if(tab==="requests")api.adminRequests().then(setRequests).catch(()=>{});
     if(tab==="ads"){api.adminAds().then(setAds).catch(()=>{});api.adminAdStats().then(setAdStats).catch(()=>{});}
     if(tab==="config"&&!cfgLoaded)api.adminConfig().then(c=>{setCfgDraft(c);setCfgLoaded(true);}).catch(()=>{});
@@ -1212,6 +1422,7 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
     {id:"clients",l:"👥 Clients"},{id:"requests",l:"📋 Demandes"},
     {id:"ads",l:"📢 Régie Pub"},{id:"config",l:"⚙️ Config"},
     {id:"add-artisan",l:"➕ Ajouter Artisan"},{id:"tools",l:"🔧 Outils"},
+    {id:"export",l:"📥 Export CSV"},{id:"views",l:"👁️ Consultations"},
   ];
 
   return(
@@ -1444,6 +1655,106 @@ function AdminDash({siteConfig,setSiteConfig,setToast}){
 
       {/* ── AJOUTER ARTISAN ── */}
       {tab==="add-artisan"&&<AdminAddArtisan setToast={setToast}/>}
+
+      {/* ── EXPORT CSV ── */}
+      {tab==="export"&&<ExportPanel artisans={artisans} clients={clients}/>}
+
+      {/* ── CONSULTATIONS ── */}
+      {tab==="views"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
+            {[
+              ["👁️","Total consultations",viewStats.total_views,C.orange],
+              ["🔧","Artisans suivis",viewStats.artisans.length,C.blue],
+              ["🏆","Top artisan",viewStats.artisans[0]?.views_count||0,C.purple],
+              ["📈","Moy. par artisan",viewStats.artisans.length>0?Math.round(viewStats.total_views/viewStats.artisans.length):0,C.green],
+            ].map(([icon,label,value,color])=>(
+              <Card key={label} style={{padding:"14px 12px",textAlign:"center"}}>
+                <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+                <div style={{fontWeight:700,fontSize:22,color}}>{value}</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>{label}</div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Tableau consultations triées */}
+          <Card style={{padding:0,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <span style={{fontWeight:700,fontSize:15}}>👁️ Consultations par artisan</span>
+              <span style={{fontSize:12,color:C.muted}}>Triées par nombre de vues décroissant</span>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{background:C.cardAlt,borderBottom:`2px solid ${C.border}`}}>
+                    {["#","Artisan","Ville","Spécialité","Plan","Note","Consultations","Vues/jour","Demandes"].map(h=>(
+                      <th key={h} style={{padding:"10px 13px",textAlign:"left",fontSize:12,fontWeight:700,color:C.muted,whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewStats.artisans.map((a,i)=>{
+                    // Barre de progression relative au max
+                    const max = viewStats.artisans[0]?.views_count||1;
+                    const pct = Math.round((a.views_count/max)*100);
+                    return(
+                      <tr key={a.id} style={{borderBottom:`1px solid ${C.border}`,background:i%2?C.cardAlt:C.card}}>
+                        <td style={{padding:"10px 13px",fontWeight:700,color:i<3?C.orange:C.muted,fontSize:i<3?15:13}}>
+                          {i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}`}
+                        </td>
+                        <td style={{padding:"10px 13px"}}>
+                          <div style={{fontWeight:600,fontSize:13}}>{a.name}</div>
+                          <div style={{fontSize:11,color:C.muted}}>{a.is_validated?"✅ Validé":"⏳ En attente"}</div>
+                        </td>
+                        <td style={{padding:"10px 13px",fontSize:13,color:C.textSub}}>{a.city||"—"}</td>
+                        <td style={{padding:"10px 13px",fontSize:13}}>{a.category||"—"}</td>
+                        <td style={{padding:"10px 13px"}}><Chip color={a.plan==="premium"?C.purple:C.muted}>{a.plan||"free"}</Chip></td>
+                        <td style={{padding:"10px 13px",fontSize:13,color:C.yellow}}>⭐ {a.rating||"—"}</td>
+                        <td style={{padding:"10px 13px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{flex:1,background:C.border,borderRadius:4,height:6,minWidth:60}}>
+                              <div style={{width:`${pct}%`,background:pct>60?C.orange:pct>30?C.yellow:C.muted,height:"100%",borderRadius:4,transition:"width .3s"}}/>
+                            </div>
+                            <span style={{fontWeight:700,fontSize:13,color:C.orange,minWidth:30}}>{a.views_count||0}</span>
+                          </div>
+                        </td>
+                        <td style={{padding:"10px 13px",fontSize:13,color:C.muted}}>{a.views_per_day||0}/j</td>
+                        <td style={{padding:"10px 13px",fontSize:13}}>{a.jobs_count||0}</td>
+                      </tr>
+                    );
+                  })}
+                  {viewStats.artisans.length===0&&(
+                    <tr><td colSpan={9} style={{padding:40,textAlign:"center",color:C.muted}}>Aucune donnée de consultation disponible.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Export consultations CSV */}
+          <div style={{display:"flex",justifyContent:"flex-end"}}>
+            <Btn variant="primary" onClick={()=>{
+              if(!viewStats.artisans.length){alert("Aucune donnée.");return;}
+              const headers=["Rang","Nom","Ville","Spécialité","Plan","Note","Consultations","Vues_par_jour","Demandes","Inscrit"];
+              const rows=viewStats.artisans.map((a,i)=>({
+                rang:i+1, nom:a.name, ville:a.city||"", specialite:a.category||"",
+                plan:a.plan||"free", note:a.rating||"", consultations:a.views_count||0,
+                vues_par_jour:a.views_per_day||0, demandes:a.jobs_count||0,
+                inscrit:a.created_at?new Date(a.created_at).toLocaleDateString("fr-TN"):"",
+              }));
+              const escape=v=>`"${String(v||"").replace(/"/g,'""')}"`;
+              const lines=[headers.join(";"),...rows.map(r=>Object.values(r).map(escape).join(";"))];
+              const blob=new Blob(["﻿"+lines.join("
+")],{type:"text/csv;charset=utf-8;"});
+              const url=URL.createObjectURL(blob);
+              const a=document.createElement("a");
+              a.href=url;a.download=`fixily_consultations_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+              URL.revokeObjectURL(url);
+            }}>⬇️ Exporter consultations CSV</Btn>
+          </div>
+        </div>
+      )}
 
       {/* ── OUTILS ── */}
       {tab==="tools"&&(
